@@ -78,7 +78,7 @@ namespace QsysDiscovery
                     {
                         var receiveTask = udpClient.ReceiveAsync();
                         var delayTask =
-                            Task.Delay(5000,
+                            Task.Delay(60000,
                                 cancellationToken); // Wait for 5 seconds or until cancellation is requested
 
                         var completedTask = await Task.WhenAny(receiveTask, delayTask);
