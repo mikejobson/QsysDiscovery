@@ -65,6 +65,8 @@ namespace QsysDiscovery
             var data = new List<JToken>();
             using (var udpClient = new UdpClient())
             {
+                udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                udpClient.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
                 udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, port));
                 udpClient.JoinMulticastGroup(multicastAddress);
 
