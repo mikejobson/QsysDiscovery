@@ -15,8 +15,20 @@ namespace QsysDiscovery
 {
     public static class QsysDiscoveryProtocol
     {
-        public static async Task<JToken[]> DiscoverAsync(int timeoutInMilliseconds = 3000)
+        public static async Task<DiscoveredDevice[]> DiscoverAsync(int timeoutInMilliseconds = 5000)
         {
+            var data = new List<JToken>();
+            var deviceData = new Dictionary<string, DiscoveredDevice>();
+            var controlData = new Dictionary<string, DiscoveredControlInfo>();
+            /*using (var file = File.OpenRead("/Users/mike/Downloads/QsysDiscovery.json"))
+            {
+                var reader = new StreamReader(file);
+                var json = await reader.ReadToEndAsync();
+                var savedData = JToken.Parse(json);
+                foreach (var item in savedData) data.AddRange(item);
+            }
+
+            Console.WriteLine("Loaded saved data.");*/
             var multicastAddress = IPAddress.Parse("224.0.23.175");
             const int startPort = 2467;
             const int endPort = 2470;
@@ -25,8 +37,6 @@ namespace QsysDiscovery
             cancellationTokenSource.CancelAfter(timeoutInMilliseconds);
 
             var tasks = new Task[endPort - startPort + 1];
-            var data = new List<JToken>();
-            var deviceData = new Dictionary<string, JToken>();
 
             for (var port = startPort; port <= endPort; port++)
             {
@@ -42,19 +52,37 @@ namespace QsysDiscovery
 
             foreach (var jToken in data)
             {
-                if (!(jToken["QDP"] is JObject jObject)) continue;
+                /*var prop = jToken as JProperty;
+                if (prop == null) continue;
+                var jObject = prop.Value as JObject;*/
+                //Console.WriteLine(jToken.ToString());
+                if (!(jToken is JObject jObject)) continue;
                 foreach (var property in jObject.Properties())
                     switch (property.Name)
                     {
                         case "device":
                             var deviceRef = property.Value["ref"]?.Value<string>();
-                            if (deviceRef != null)
-                                // Console.WriteLine($"Found {property.Name} with ref: {deviceRef}");
-                                deviceData[deviceRef] = property.Value;
-                            // Console.WriteLine($"Found {property.Name} with ref: {property.Value}");
+                            if (deviceRef == null || deviceData.ContainsKey(deviceRef))
+                                continue;
+                            deviceData[deviceRef] = property.Value.ToObject<DiscoveredDevice>();
+                            break;
+                        case "control":
+                            var controlRef = property.Value["device_ref"]?.Value<string>();
+                            if (controlRef == null || controlData.ContainsKey(controlRef))
+                                continue;
+                            controlData[controlRef] = property.Value.ToObject<DiscoveredControlInfo>();
+                            break;
+                        case "query_ref":
+                            break;
+                        default:
+                            Console.WriteLine("Unknown property: " + property.Name);
                             break;
                     }
             }
+
+            foreach (var device in deviceData.Values)
+                if (controlData.TryGetValue(device.Ref, out var controlInfo))
+                    device.ControlInfo = controlInfo;
 
             return deviceData.Values.ToArray();
         }
@@ -70,7 +98,7 @@ namespace QsysDiscovery
                 udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, port));
                 udpClient.JoinMulticastGroup(multicastAddress);
 
-                //Console.WriteLine($"Listening for multicast UDP packets on {multicastAddress}:{port}...");
+                Console.WriteLine($"Listening for multicast UDP packets on {multicastAddress}:{port}...");
 
                 try
                 {
@@ -94,7 +122,8 @@ namespace QsysDiscovery
                                 xmlDoc.LoadXml(receivedData);
                                 var json = JsonConvert.SerializeXmlNode(xmlDoc, Formatting.Indented);
                                 var jToken = JToken.Parse(json);
-                                data.Add(jToken);
+                                if (jToken["QDP"] != null)
+                                    data.Add(jToken["QDP"]);
                             }
                             catch (XmlException xmlEx)
                             {
@@ -119,7 +148,7 @@ namespace QsysDiscovery
                 finally
                 {
                     udpClient.DropMulticastGroup(multicastAddress);
-                    //Console.WriteLine($"Stopped listening on port {port}.");
+                    Console.WriteLine($"Stopped listening on port {port}.");
                 }
             }
 
